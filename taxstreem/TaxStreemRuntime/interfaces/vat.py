@@ -1,7 +1,8 @@
 """
 VAT filing interfaces — mirrors src/interfaces/vat.ts from the Node SDK.
-Uses Python dataclasses for zero-dependency typed models with camelCase
-API serialisation to match the Node SDK wire format exactly.
+
+Field names follow Python's snake_case convention. The as_dict() method
+on each model handles the translation to camelCase for the wire format.
 """
 from __future__ import annotations
 
@@ -9,37 +10,35 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 
-# ---------------------------------------------------------------------------
-# Request models
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class VatFilingItem:
     """A single line item within a VAT filing."""
-    vatStatus: int
+
+    vat_status: int
     amount: float
     item: str
     narration: str
-    taxId: str
+    tax_id: str
     beneficiary: str
 
-    def __post_init__(self):
-        if not isinstance(self.vatStatus, int):
-            raise ValueError("vatStatus must be an int")
-        if not isinstance(self.amount, (int, float)):
-            raise ValueError("amount must be a number")
-        for fname in ("item", "narration", "taxId", "beneficiary"):
-            if not getattr(self, fname):
-                raise ValueError(f"{fname} is required")
+    def __post_init__(self) -> None:
+        if self.amount < 0:
+            raise ValueError("amount must be non-negative")
+        if not self.item:
+            raise ValueError("item is required")
+        if not self.tax_id:
+            raise ValueError("tax_id is required")
+        if not self.beneficiary:
+            raise ValueError("beneficiary is required")
 
-    def _api_dict(self) -> Dict:
+    def as_dict(self) -> Dict[str, Any]:
+        """Serialise to the camelCase wire format expected by the API."""
         return {
-            "vatStatus": self.vatStatus,
+            "vatStatus": self.vat_status,
             "amount": self.amount,
             "item": self.item,
             "narration": self.narration,
-            "taxId": self.taxId,
+            "taxId": self.tax_id,
             "beneficiary": self.beneficiary,
         }
 
@@ -47,38 +46,40 @@ class VatFilingItem:
 @dataclass
 class VatFilingPayload:
     """Payload for a single VAT return submission."""
-    encryptedPayload: str
+
+    encrypted_payload: str
     month: int
     year: int
     data: List[VatFilingItem]
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not (1 <= self.month <= 12):
-            raise ValueError("month must be between 1 and 12")
+            raise ValueError(f"month must be 1–12, got {self.month}")
         if self.year < 2000:
-            raise ValueError("year must be >= 2000")
-        if not self.encryptedPayload:
-            raise ValueError("encryptedPayload is required")
+            raise ValueError(f"year must be >= 2000, got {self.year}")
+        if not self.encrypted_payload:
+            raise ValueError("encrypted_payload is required")
 
-    def _api_dict(self) -> Dict:
+    def as_dict(self) -> Dict[str, Any]:
         return {
-            "encryptedPayload": self.encryptedPayload,
+            "encryptedPayload": self.encrypted_payload,
             "month": self.month,
             "year": self.year,
-            "data": [item._api_dict() for item in self.data],
+            "data": [item.as_dict() for item in self.data],
         }
 
 
 @dataclass
 class VatFilingBatchPayload:
     """Payload for a batch of VAT return submissions."""
-    batchId: str
+
+    batch_id: str
     payload: List[VatFilingPayload]
 
-    def _api_dict(self) -> Dict:
+    def as_dict(self) -> Dict[str, Any]:
         return {
-            "batchId": self.batchId,
-            "payload": [p._api_dict() for p in self.payload],
+            "batchId": self.batch_id,
+            "payload": [p.as_dict() for p in self.payload],
         }
 
 
@@ -90,34 +91,37 @@ class VatFilingBatchPayload:
 @dataclass
 class FilingResponse:
     """API response for a single filing submission."""
+
     status: str
     reference_id: str
     message: str
     data: Optional[Any] = None
 
     @classmethod
-    def from_dict(cls, d: Dict) -> "FilingResponse":
+    def from_dict(cls, raw: Dict[str, Any]) -> FilingResponse:
         return cls(
-            status=d["status"],
-            reference_id=d["reference_id"],
-            message=d["message"],
-            data=d.get("data"),
+            status=raw["status"],
+            reference_id=raw["reference_id"],
+            message=raw["message"],
+            data=raw.get("data"),
         )
 
 
 @dataclass
 class BatchFilingResponse:
     """API response for a batch filing submission."""
+
     status: str
     batch_id: str
     message: str
     data: Optional[Any] = None
 
     @classmethod
-    def from_dict(cls, d: Dict) -> "BatchFilingResponse":
+    def from_dict(cls, raw: Dict[str, Any]) -> BatchFilingResponse:
         return cls(
-            status=d["status"],
-            batch_id=d.get("batchId", d.get("batch_id", "")),
-            message=d["message"],
-            data=d.get("data"),
+            status=raw["status"],
+            # API returns "batchId" (camelCase) — normalise to snake_case here.
+            batch_id=raw.get("batchId") or raw.get("batch_id", ""),
+            message=raw["message"],
+            data=raw.get("data"),
         )

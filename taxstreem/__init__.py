@@ -1,38 +1,31 @@
 """
-TaxStreem Python SDK — top-level client.
-
-Mirrors ``src/index.ts`` from the Node SDK.
+TaxStreem Python SDK.
 
 Usage::
 
-    from taxstreem import TaxStreem
+    from taxstreem import TaxStreem, VatFilingPayload, VatFilingItem
 
     sdk = TaxStreem(
         api_key="your-api-key",
         shared_secret="your-shared-secret",
-        debug=True,
     )
 
-    # Encrypt credentials
     encrypted = sdk.encryption.encrypt_tax_pro_max_credential(
         {"email": "user@example.com", "password": "s3cr3t"}
     )
 
-    # Submit a VAT filing
-    from taxstreem import VatFilingPayload, VatFilingItem
-
     result = sdk.flux.file_vat_single(
         VatFilingPayload(
-            encryptedPayload=encrypted,
+            encrypted_payload=encrypted,
             month=1,
             year=2024,
             data=[
                 VatFilingItem(
-                    vatStatus=1,
+                    vat_status=1,
                     amount=5000,
                     item="Baby diapers",
                     narration="Bought kisskid diaper",
-                    taxId="2345544-0001",
+                    tax_id="2345544-0001",
                     beneficiary="Retail Customer",
                 )
             ],
@@ -42,13 +35,9 @@ Usage::
 """
 from __future__ import annotations
 
-from typing import Optional
-
-from taxstreem.runtime import TaxStreemConfig, TaxStreemRuntime
+from taxstreem.runtime import TaxStreemConfig, TaxStreemRuntime, TaxStreemError
 from taxstreem.services.encryption import EncryptionService
 from taxstreem.services.flux import FluxResource
-
-# Re-export public interfaces for convenience
 from taxstreem.interfaces.vat import (
     VatFilingItem,
     VatFilingPayload,
@@ -65,6 +54,7 @@ from taxstreem.interfaces.wht import (
 __all__ = [
     "TaxStreem",
     "TaxStreemConfig",
+    "TaxStreemError",
     # VAT
     "VatFilingItem",
     "VatFilingPayload",
@@ -83,15 +73,14 @@ class TaxStreem:
     Main entry point for the TaxStreem Python SDK.
 
     Args:
-        api_key:       Your TaxStreem API key (sent as ``x-api-key`` header).
-        shared_secret: Your TaxStreem shared secret — used for AES-256-GCM
-                       payload encryption.
-        debug:         When ``True``, HTTP requests/responses are logged at
-                       ``DEBUG`` level.  Defaults to ``False``.
-        base_url:      Override the API base URL.  Defaults to
-                       ``"https://api.taxstreem.com/v1"``.
-        max_retries:   Maximum number of retry attempts on transient errors.
-                       Defaults to ``3``.
+        api_key:        Your TaxStreem API key (sent as ``x-api-key`` header).
+        shared_secret:  Your TaxStreem shared secret — used for AES-256-GCM
+                        payload encryption and request signing.
+        debug:          When ``True``, HTTP requests/responses are logged at
+                        ``DEBUG`` level via the ``taxstreem`` logger.
+        base_url:       Override the API base URL.
+        max_retries:    Max retry attempts on transient (5xx / network) errors.
+                        Non-retryable 4xx errors always raise immediately.
     """
 
     flux: FluxResource
@@ -114,6 +103,5 @@ class TaxStreem:
             max_retries=max_retries,
         )
         runtime = TaxStreemRuntime(config)
-
         self.flux = FluxResource(runtime)
         self.encryption = EncryptionService(shared_secret)
